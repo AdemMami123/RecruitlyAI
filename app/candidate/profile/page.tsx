@@ -86,6 +86,11 @@ export default function CandidateProfilePage() {
   }
 
   const handleSaveProfile = async () => {
+    if (!user) {
+      alert('User not authenticated')
+      return
+    }
+
     setSaving(true)
     try {
       const { error } = await supabase
@@ -112,7 +117,10 @@ export default function CandidateProfilePage() {
   }
 
   const handleCvUpload = async () => {
-    if (!cvFile || !user) return
+    if (!cvFile || !user) {
+      alert('Please select a file and ensure you are logged in')
+      return
+    }
 
     setUploading(true)
     try {

@@ -95,11 +95,11 @@ export async function POST(request: NextRequest) {
         description:
           testDescription ||
           `AI-generated assessment for ${jobTitle} position`,
-        duration: duration || generatedTest.metadata.estimatedDuration,
+        duration_minutes: duration || generatedTest.metadata.estimatedDuration,
         passing_score: passingScore,
         total_points: generatedTest.metadata.totalPoints,
         ai_generated: true,
-        is_active: true,
+        is_published: false,
       })
       .select()
       .single();

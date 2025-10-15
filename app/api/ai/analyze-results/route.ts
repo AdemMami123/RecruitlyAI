@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
         test:tests(
           id,
           title,
-          duration,
+          duration_minutes,
           total_points
         ),
         candidate:profiles!test_results_candidate_id_fkey(
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
       answers: candidateAnswers,
       totalPoints: testResult.test?.total_points || 0,
       earnedPoints: totalEarnedPoints,
-      testDuration: testResult.test?.duration || 60,
+      testDuration: testResult.test?.duration_minutes || 60,
       actualDuration,
     });
 

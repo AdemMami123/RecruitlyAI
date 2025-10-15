@@ -96,18 +96,25 @@ export default function HRProfilePage() {
         .eq('is_published', true)
 
       // Get unique candidates who have taken tests
-      const { data: assignments } = await supabase
-        .from('test_assignments')
-        .select('candidate_id')
-        .in('test_id', 
-          (await supabase
-            .from('tests')
-            .select('id')
-            .eq('created_by', user.id)
-          ).data?.map(t => t.id) || []
-        )
+      // First get all test IDs for this HR
+      const { data: testIds } = await supabase
+        .from('tests')
+        .select('id')
+        .eq('created_by', user.id)
 
-      const uniqueCandidates = new Set(assignments?.map(a => a.candidate_id) || []).size
+      const testIdArray = testIds?.map(t => t.id) || []
+      
+      let uniqueCandidates = 0
+      
+      // Only query assignments if there are tests
+      if (testIdArray.length > 0) {
+        const { data: assignments } = await supabase
+          .from('test_assignments')
+          .select('candidate_id')
+          .in('test_id', testIdArray)
+
+        uniqueCandidates = new Set(assignments?.map(a => a.candidate_id) || []).size
+      }
 
       setStats({
         testsCreated: testsCount || 0,
@@ -120,6 +127,11 @@ export default function HRProfilePage() {
   }
 
   const handleSaveProfile = async () => {
+    if (!user) {
+      alert('User not authenticated')
+      return
+    }
+
     setSaving(true)
     try {
       const { error } = await supabase
