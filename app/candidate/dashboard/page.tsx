@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileText, Award, Clock, TrendingUp, Loader2, Play, Eye } from 'lucide-react'
+import { FileText, Award, Clock, TrendingUp, Loader2, Play, Eye, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { motionVariants } from '@/lib/design-system'
 
@@ -110,6 +110,10 @@ export default function CandidateDashboardPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => router.push('/candidate/profile')}>
+              <User className="h-4 w-4 mr-2" />
+              Profile
+            </Button>
             <Button variant="outline" onClick={handleLogout}>
               Logout
             </Button>

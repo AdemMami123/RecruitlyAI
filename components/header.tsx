@@ -2,11 +2,12 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Menu, X, Sparkles } from 'lucide-react'
+import { Menu, X, Sparkles, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { UserProfileMenu } from '@/components/user-profile-menu'
 import {
   Sheet,
   SheetContent,
@@ -15,6 +16,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard' },
@@ -23,9 +25,96 @@ const navigation = [
   { name: 'Analytics', href: '/analytics' },
 ]
 
+interface UserProfile {
+  id: string
+  email?: string
+  full_name?: string
+  role?: 'hr' | 'candidate'
+  avatar_url?: string
+}
+
 export function Header() {
   const [isOpen, setIsOpen] = React.useState(false)
+  const [user, setUser] = React.useState<UserProfile | null>(null)
+  const [loading, setLoading] = React.useState(true)
   const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
+
+  React.useEffect(() => {
+    // Get initial user state
+    const getUser = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        
+        if (authUser) {
+          // Fetch user profile
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id, full_name, email, role, avatar_url')
+            .eq('id', authUser.id)
+            .single()
+
+          if (profile) {
+            setUser(profile)
+          } else {
+            // Fallback to auth user data
+            setUser({
+              id: authUser.id,
+              email: authUser.email,
+              full_name: authUser.user_metadata?.full_name,
+              role: authUser.user_metadata?.role,
+            })
+          }
+        } else {
+          setUser(null)
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error)
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    getUser()
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, role, avatar_url')
+          .eq('id', session.user.id)
+          .single()
+
+        if (profile) {
+          setUser(profile)
+        } else {
+          setUser({
+            id: session.user.id,
+            email: session.user.email,
+            full_name: session.user.user_metadata?.full_name,
+            role: session.user.user_metadata?.role,
+          })
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null)
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [supabase])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    router.push('/')
+    router.refresh()
+    setIsOpen(false)
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/20 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/50 shadow-sm">
@@ -75,12 +164,24 @@ export function Header() {
           
           {/* User Menu - Desktop */}
           <div className="hidden md:flex items-center space-x-2">
-            <Button variant="outline" asChild>
-              <Link href="/login">Login</Link>
-            </Button>
-            <Button asChild className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
-              <Link href="/signup">Get Started</Link>
-            </Button>
+            {!loading && (
+              <>
+                {user ? (
+                  // Authenticated: Show Profile Menu
+                  <UserProfileMenu user={user} />
+                ) : (
+                  // Not Authenticated: Show Login/Signup Buttons
+                  <>
+                    <Button variant="outline" asChild>
+                      <Link href="/login">Login</Link>
+                    </Button>
+                    <Button asChild className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
+                      <Link href="/signup">Get Started</Link>
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
           </div>
 
           {/* Mobile Menu */}
@@ -113,18 +214,70 @@ export function Header() {
                     </Button>
                   </Link>
                 ))}
-                <div className="pt-4 border-t space-y-2">
-                  <Button variant="outline" className="w-full" asChild>
-                    <Link href="/login" onClick={() => setIsOpen(false)}>
-                      Login
-                    </Link>
-                  </Button>
-                  <Button className="w-full bg-gradient-to-r from-primary to-accent" asChild>
-                    <Link href="/signup" onClick={() => setIsOpen(false)}>
-                      Get Started
-                    </Link>
-                  </Button>
-                </div>
+                
+                {/* Mobile Auth Section */}
+                {!loading && (
+                  <div className="pt-4 border-t space-y-2">
+                    {user ? (
+                      // Authenticated Mobile View
+                      <>
+                        <div className="px-2 py-3 bg-muted rounded-lg">
+                          <p className="text-sm font-medium">{user.full_name || 'User'}</p>
+                          <p className="text-xs text-muted-foreground">{user.email}</p>
+                          {user.role && (
+                            <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary mt-2">
+                              {user.role === 'hr' ? '👔 HR' : '🎯 Candidate'}
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            const profilePath = user.role === 'hr' ? '/hr/profile' : '/candidate/profile'
+                            router.push(profilePath)
+                            setIsOpen(false)
+                          }}
+                        >
+                          Profile
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            const dashboardPath = user.role === 'hr' ? '/hr/dashboard' : '/candidate/dashboard'
+                            router.push(dashboardPath)
+                            setIsOpen(false)
+                          }}
+                        >
+                          Dashboard
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          className="w-full"
+                          onClick={handleLogout}
+                        >
+                          <LogOut className="mr-2 h-4 w-4" />
+                          Log out
+                        </Button>
+                      </>
+                    ) : (
+                      // Not Authenticated Mobile View
+                      <>
+                        <Button variant="outline" className="w-full" asChild>
+                          <Link href="/login" onClick={() => setIsOpen(false)}>
+                            Login
+                          </Link>
+                        </Button>
+                        <Button className="w-full bg-gradient-to-r from-primary to-accent" asChild>
+                          <Link href="/signup" onClick={() => setIsOpen(false)}>
+                            Get Started
+                          </Link>
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </SheetContent>
           </Sheet>

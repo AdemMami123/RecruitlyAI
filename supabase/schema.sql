@@ -1,16 +1,48 @@
 -- ============================================
 -- RECRUITLY AI - COMPLETE DATABASE SCHEMA
 -- ============================================
--- Run this entire file in your Supabase SQL Editor
--- This creates all tables, policies, and triggers needed
+-- Version: 2.0
+-- Compatible with: Supabase PostgreSQL 15+
+-- Last Updated: October 15, 2025
+--
+-- INSTRUCTIONS:
+-- 1. Open your Supabase project dashboard
+-- 2. Navigate to SQL Editor
+-- 3. Create a new query
+-- 4. Copy and paste this ENTIRE file
+-- 5. Click "Run" to execute
+-- 6. Verify all tables are created in Table Editor
+--
+-- This schema includes:
+-- - 6 core tables with RLS policies
+-- - Storage bucket for CV uploads
+-- - Automated triggers for statistics
+-- - Performance indexes
+-- - Dashboard views
+-- ============================================
+
+-- ============================================
+-- CLEANUP (Optional - Use with caution)
+-- ============================================
+-- Uncomment the following lines ONLY if you want to reset the database
+-- WARNING: This will delete ALL data!
+
+-- DROP TABLE IF EXISTS public.notifications CASCADE;
+-- DROP TABLE IF EXISTS public.shortlists CASCADE;
+-- DROP TABLE IF EXISTS public.test_results CASCADE;
+-- DROP TABLE IF EXISTS public.test_assignments CASCADE;
+-- DROP TABLE IF EXISTS public.tests CASCADE;
+-- DROP TABLE IF EXISTS public.profiles CASCADE;
+-- DROP VIEW IF EXISTS public.hr_dashboard_summary CASCADE;
+-- DROP VIEW IF EXISTS public.candidate_dashboard_summary CASCADE;
 
 -- ============================================
 -- 1. PROFILES TABLE (User Information)
 -- ============================================
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   full_name TEXT NOT NULL,
-  email TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
   role TEXT NOT NULL CHECK (role IN ('hr', 'candidate')),
   avatar_url TEXT,
   
@@ -23,23 +55,28 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   -- Candidate-specific fields
   position TEXT,
   bio TEXT,
-  skills TEXT[],
+  skills TEXT[] DEFAULT '{}',
   cv_url TEXT,
   phone TEXT,
   location TEXT,
-  experience_years INTEGER,
+  experience_years INTEGER CHECK (experience_years >= 0),
   education TEXT,
   
-  -- Scoring & Analytics
-  total_tests_taken INTEGER DEFAULT 0,
-  total_tests_passed INTEGER DEFAULT 0,
-  average_score DECIMAL(5,2) DEFAULT 0.00,
-  strengths TEXT[],
-  weaknesses TEXT[],
+  -- Scoring & Analytics (auto-updated by triggers)
+  total_tests_taken INTEGER DEFAULT 0 CHECK (total_tests_taken >= 0),
+  total_tests_passed INTEGER DEFAULT 0 CHECK (total_tests_passed >= 0),
+  tests_in_progress INTEGER DEFAULT 0 CHECK (tests_in_progress >= 0),
+  tests_completed INTEGER DEFAULT 0 CHECK (tests_completed >= 0),
+  average_score DECIMAL(5,2) DEFAULT 0.00 CHECK (average_score >= 0 AND average_score <= 100),
+  strengths TEXT[] DEFAULT '{}',
+  weaknesses TEXT[] DEFAULT '{}',
   
   -- Metadata
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  
+  -- Constraints
+  CONSTRAINT valid_email CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 );
 
 -- ============================================
@@ -50,32 +87,42 @@ CREATE TABLE IF NOT EXISTS public.tests (
   created_by UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   
   -- Test Details
-  title TEXT NOT NULL,
+  title TEXT NOT NULL CHECK (LENGTH(title) >= 3 AND LENGTH(title) <= 200),
   description TEXT,
-  category TEXT, -- e.g., "JavaScript", "React", "Python"
-  difficulty TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
-  duration_minutes INTEGER NOT NULL DEFAULT 30,
-  passing_score INTEGER NOT NULL DEFAULT 70,
+  category TEXT, -- e.g., "JavaScript", "React", "Python", "Data Science"
+  difficulty TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')) DEFAULT 'medium',
+  duration_minutes INTEGER NOT NULL DEFAULT 30 CHECK (duration_minutes > 0 AND duration_minutes <= 300),
+  passing_score INTEGER NOT NULL DEFAULT 70 CHECK (passing_score >= 0 AND passing_score <= 100),
+  total_points INTEGER DEFAULT 100 CHECK (total_points > 0),
   
   -- Questions (stored as JSONB)
   questions JSONB NOT NULL DEFAULT '[]'::jsonb,
-  -- Format: [{"id": 1, "question": "...", "options": [], "correct": 0, "points": 10}]
+  -- Format: [{"id": 1, "question": "...", "options": [], "correct": 0, "points": 10, "explanation": "..."}]
   
   -- Test Settings
   is_published BOOLEAN DEFAULT false,
   is_timed BOOLEAN DEFAULT true,
   shuffle_questions BOOLEAN DEFAULT true,
+  shuffle_options BOOLEAN DEFAULT true,
   show_correct_answers BOOLEAN DEFAULT true,
-  max_attempts INTEGER DEFAULT 1,
+  show_explanations BOOLEAN DEFAULT true,
+  max_attempts INTEGER DEFAULT 1 CHECK (max_attempts > 0 AND max_attempts <= 10),
+  require_webcam BOOLEAN DEFAULT false,
+  ai_generated BOOLEAN DEFAULT false,
   
-  -- Statistics
-  total_attempts INTEGER DEFAULT 0,
-  total_passed INTEGER DEFAULT 0,
-  average_score DECIMAL(5,2) DEFAULT 0.00,
+  -- Statistics (auto-updated by triggers)
+  total_attempts INTEGER DEFAULT 0 CHECK (total_attempts >= 0),
+  total_passed INTEGER DEFAULT 0 CHECK (total_passed >= 0),
+  average_score DECIMAL(5,2) DEFAULT 0.00 CHECK (average_score >= 0 AND average_score <= 100),
+  completion_rate DECIMAL(5,2) DEFAULT 0.00 CHECK (completion_rate >= 0 AND completion_rate <= 100),
   
   -- Metadata
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  published_at TIMESTAMP WITH TIME ZONE,
+  
+  -- Constraints
+  CONSTRAINT valid_questions CHECK (jsonb_array_length(questions) > 0)
 );
 
 -- ============================================
@@ -524,12 +571,74 @@ VALUES (
 */
 
 -- ============================================
+-- 11. STORAGE BUCKETS & POLICIES
+-- ============================================
+
+-- Create CVs storage bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('cvs', 'cvs', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage Policies for CVs Bucket
+
+-- Allow authenticated users to upload their own CVs
+CREATE POLICY "Users can upload their own CV"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'cvs' AND
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+-- Allow authenticated users to update their own CVs
+CREATE POLICY "Users can update their own CV"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'cvs' AND
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+-- Allow authenticated users to delete their own CVs
+CREATE POLICY "Users can delete their own CV"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'cvs' AND
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+-- Allow authenticated users to view their own CVs
+CREATE POLICY "Users can view their own CV"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'cvs' AND
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+-- Allow HR users to view all candidate CVs
+CREATE POLICY "HR can view all candidate CVs"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'cvs' AND
+  EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid()
+    AND profiles.role = 'hr'
+  )
+);
+
+-- ============================================
 -- COMPLETION MESSAGE
 -- ============================================
 -- Schema creation complete!
 -- Remember to:
--- 1. Replace sample IDs with real user IDs
+-- 1. Replace sample IDs with real user IDs when using seed data
 -- 2. Test all policies with different user roles
 -- 3. Monitor query performance and add indexes as needed
--- 4. Set up Supabase Storage buckets for CV uploads
+-- 4. Storage bucket 'cvs' is now created with proper access policies
+-- 5. Candidates can upload/view their own CVs
+-- 6. HR users can view all candidate CVs
 -- ============================================
