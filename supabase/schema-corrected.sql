@@ -210,28 +210,30 @@ CREATE INDEX IF NOT EXISTS test_results_status_idx ON public.test_results(status
 CREATE INDEX IF NOT EXISTS test_results_completed_at_idx ON public.test_results(completed_at);
 
 -- =========================
--- TABLE: ai_feedback
+-- TABLE: ai_feedback (with backward compatibility)
 -- =========================
+-- Note: This table may already exist with test_id column
+-- The script will add test_result_id if missing
 CREATE TABLE IF NOT EXISTS public.ai_feedback (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   candidate_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  test_result_id UUID REFERENCES public.test_results(id) ON DELETE CASCADE,
   
   -- AI-generated feedback (from Gemini)
   feedback JSONB NOT NULL,
   -- Structure: { strengths: [], weaknesses: [], recommendations: [], summary: "" }
   
   -- Metadata
-  generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
-  model_version TEXT DEFAULT 'gemini-2.0-flash-exp'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+-- Add optional columns if they don't exist (handled by migration script)
+-- test_result_id, generated_at, model_version will be added by migration
 
 -- Enable RLS
 ALTER TABLE public.ai_feedback ENABLE ROW LEVEL SECURITY;
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS ai_feedback_candidate_id_idx ON public.ai_feedback(candidate_id);
-CREATE INDEX IF NOT EXISTS ai_feedback_test_result_id_idx ON public.ai_feedback(test_result_id);
 
 -- =========================
 -- STORAGE: CVs Bucket
