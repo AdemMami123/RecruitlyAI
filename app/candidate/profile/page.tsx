@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { 
   User, Mail, Phone, Upload, FileText, Loader2, Save, Edit, 
-  Award, TrendingDown, BarChart3, Download, Eye, X 
+  Award, TrendingDown, BarChart3, Download, Eye, X, MapPin, Briefcase, Link2
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { motionVariants } from '@/lib/design-system'
@@ -27,6 +27,13 @@ export default function CandidateProfilePage() {
   // Form state
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [title, setTitle] = useState('')
+  const [location, setLocation] = useState('')
+  const [experienceYears, setExperienceYears] = useState('')
+  const [bio, setBio] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [githubUrl, setGithubUrl] = useState('')
+  const [portfolioUrl, setPortfolioUrl] = useState('')
   const [skills, setSkills] = useState<string[]>([])
   const [newSkill, setNewSkill] = useState('')
   
@@ -65,6 +72,13 @@ export default function CandidateProfilePage() {
       setProfile(profile)
       setFullName(profile.full_name || '')
       setPhone(profile.phone || '')
+      setTitle(profile.title || '')
+      setLocation(profile.location || '')
+      setExperienceYears(profile.experience_years?.toString() || '')
+      setBio(profile.bio || '')
+      setLinkedinUrl(profile.linkedin_url || '')
+      setGithubUrl(profile.github_url || '')
+      setPortfolioUrl(profile.portfolio_url || '')
       setSkills(profile.skills || [])
       
       // Load CV preview URL if CV exists
@@ -93,24 +107,38 @@ export default function CandidateProfilePage() {
 
     setSaving(true)
     try {
-      const { error } = await supabase
+      console.log('Updating profile for user:', user.id)
+      const { data, error } = await supabase
         .from('profiles')
         .update({
           full_name: fullName,
           phone: phone,
+          title: title,
+          location: location,
+          experience_years: experienceYears ? parseInt(experienceYears) : null,
+          bio: bio,
+          linkedin_url: linkedinUrl,
+          github_url: githubUrl,
+          portfolio_url: portfolioUrl,
           skills: skills,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id)
+        .select()
 
-      if (error) throw error
+      console.log('Update response:', { data, error })
+
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
 
       // Reload profile
       await loadProfile()
       setEditing(false)
     } catch (error) {
       console.error('Error updating profile:', error)
-      alert('Failed to update profile')
+      alert(`Failed to update profile: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
     }
@@ -289,6 +317,96 @@ export default function CandidateProfilePage() {
                         className="pl-10"
                       />
                     </div>
+                  </div>
+
+                  {/* Title */}
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Job Title</Label>
+                    <Input
+                      id="title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      disabled={!editing}
+                      placeholder="e.g. Software Engineer"
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      disabled={!editing}
+                      placeholder="e.g. San Francisco, CA"
+                    />
+                  </div>
+
+                  {/* Experience Years */}
+                  <div className="space-y-2">
+                    <Label htmlFor="experienceYears">Years of Experience</Label>
+                    <Input
+                      id="experienceYears"
+                      type="number"
+                      value={experienceYears}
+                      onChange={(e) => setExperienceYears(e.target.value)}
+                      disabled={!editing}
+                      placeholder="e.g. 5"
+                      min="0"
+                    />
+                  </div>
+
+                  {/* Bio */}
+                  <div className="space-y-2">
+                    <Label htmlFor="bio">Bio</Label>
+                    <textarea
+                      id="bio"
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      disabled={!editing}
+                      placeholder="Tell us about yourself..."
+                      className="w-full min-h-[100px] px-3 py-2 text-sm rounded-md border border-input bg-background disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* LinkedIn */}
+                  <div className="space-y-2">
+                    <Label htmlFor="linkedinUrl">LinkedIn URL</Label>
+                    <Input
+                      id="linkedinUrl"
+                      type="url"
+                      value={linkedinUrl}
+                      onChange={(e) => setLinkedinUrl(e.target.value)}
+                      disabled={!editing}
+                      placeholder="https://linkedin.com/in/yourprofile"
+                    />
+                  </div>
+
+                  {/* GitHub */}
+                  <div className="space-y-2">
+                    <Label htmlFor="githubUrl">GitHub URL</Label>
+                    <Input
+                      id="githubUrl"
+                      type="url"
+                      value={githubUrl}
+                      onChange={(e) => setGithubUrl(e.target.value)}
+                      disabled={!editing}
+                      placeholder="https://github.com/yourusername"
+                    />
+                  </div>
+
+                  {/* Portfolio */}
+                  <div className="space-y-2">
+                    <Label htmlFor="portfolioUrl">Portfolio URL</Label>
+                    <Input
+                      id="portfolioUrl"
+                      type="url"
+                      value={portfolioUrl}
+                      onChange={(e) => setPortfolioUrl(e.target.value)}
+                      disabled={!editing}
+                      placeholder="https://yourportfolio.com"
+                    />
                   </div>
 
                   {editing && (

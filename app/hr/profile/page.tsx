@@ -31,6 +31,10 @@ export default function HRProfilePage() {
   const [phone, setPhone] = useState('')
   const [company, setCompany] = useState('')
   const [industry, setIndustry] = useState('')
+  const [title, setTitle] = useState('')
+  const [location, setLocation] = useState('')
+  const [bio, setBio] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
   
   const router = useRouter()
   const supabase = createClient()
@@ -70,6 +74,10 @@ export default function HRProfilePage() {
       setPhone(profile.phone || '')
       setCompany(profile.company || '')
       setIndustry(profile.industry || '')
+      setTitle(profile.title || '')
+      setLocation(profile.location || '')
+      setBio(profile.bio || '')
+      setLinkedinUrl(profile.linkedin_url || '')
     } catch (error) {
       console.error('Error loading profile:', error)
     } finally {
@@ -134,25 +142,36 @@ export default function HRProfilePage() {
 
     setSaving(true)
     try {
-      const { error } = await supabase
+      console.log('Updating profile for user:', user.id)
+      const { data, error } = await supabase
         .from('profiles')
         .update({
           full_name: fullName,
           phone: phone,
           company: company,
           industry: industry,
+          title: title,
+          location: location,
+          bio: bio,
+          linkedin_url: linkedinUrl,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id)
+        .select()
 
-      if (error) throw error
+      console.log('Update response:', { data, error })
+
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
 
       // Reload profile
       await loadProfile()
       setEditing(false)
     } catch (error) {
       console.error('Error updating profile:', error)
-      alert('Failed to update profile')
+      alert(`Failed to update profile: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
     }
@@ -300,6 +319,56 @@ export default function HRProfilePage() {
                         className="pl-10"
                       />
                     </div>
+                  </div>
+
+                  {/* Title */}
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Job Title</Label>
+                    <Input
+                      id="title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      disabled={!editing}
+                      placeholder="e.g. HR Manager, Recruiter"
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      disabled={!editing}
+                      placeholder="e.g. New York, NY"
+                    />
+                  </div>
+
+                  {/* Bio */}
+                  <div className="space-y-2">
+                    <Label htmlFor="bio">Bio</Label>
+                    <textarea
+                      id="bio"
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      disabled={!editing}
+                      placeholder="Tell us about yourself and your company..."
+                      className="w-full min-h-[100px] px-3 py-2 text-sm rounded-md border border-input bg-background disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* LinkedIn */}
+                  <div className="space-y-2">
+                    <Label htmlFor="linkedinUrl">LinkedIn URL</Label>
+                    <Input
+                      id="linkedinUrl"
+                      type="url"
+                      value={linkedinUrl}
+                      onChange={(e) => setLinkedinUrl(e.target.value)}
+                      disabled={!editing}
+                      placeholder="https://linkedin.com/in/yourprofile"
+                    />
                   </div>
 
                   {editing && (

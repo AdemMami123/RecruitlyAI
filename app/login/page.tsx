@@ -41,15 +41,16 @@ export default function LoginPage() {
           .eq('id', data.user.id)
           .single()
 
-        if (profileError) {
+        if (profileError || !profile) {
           console.error('Profile fetch error:', profileError)
-          // Fallback to default dashboard if profile not found
-          router.push('/dashboard')
-        } else {
-          // Redirect based on role
-          const dashboardPath = profile.role === 'hr' ? '/hr/dashboard' : '/candidate/dashboard'
-          router.push(dashboardPath)
+          setError('Profile not found. Please contact support or try signing up again.')
+          await supabase.auth.signOut()
+          return
         }
+
+        // Redirect based on role
+        const dashboardPath = profile.role === 'hr' ? '/hr/dashboard' : '/candidate/dashboard'
+        router.push(dashboardPath)
         router.refresh()
       }
     } catch (error: any) {

@@ -78,26 +78,33 @@ export default function SignupPage() {
       if (error) throw error
 
       if (data.user) {
-        // Create profile in profiles table
-        const { error: profileError } = await supabase
+        // Profile is automatically created by database trigger (handle_new_user)
+        // Wait a moment for the trigger to complete
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Verify profile was created
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .insert({
+          .select('id, role')
+          .eq('id', data.user.id)
+          .single()
+
+        if (profileError) {
+          console.error('Profile not found after signup:', profileError)
+          // If trigger failed, create profile manually as fallback
+          await supabase.from('profiles').insert({
             id: data.user.id,
             full_name: fullName,
             email: email,
             role: role,
           })
-
-        if (profileError) {
-          console.error('Profile creation error:', profileError)
-          // Continue anyway as auth was successful
         }
-      }
 
-      // Redirect based on role
-      const dashboardPath = role === 'hr' ? '/hr/dashboard' : '/candidate/dashboard'
-      router.push(dashboardPath)
-      router.refresh()
+        // Redirect based on role
+        const dashboardPath = role === 'hr' ? '/hr/dashboard' : '/candidate/dashboard'
+        router.push(dashboardPath)
+        router.refresh()
+      }
     } catch (error: any) {
       setError(error.message || 'Failed to create account')
     } finally {
